@@ -1,6 +1,6 @@
 #!/usr/bin/swift
 // Draws the app icon (a lit house on a night-sky tile) and writes macos/AppIcon.icns,
-// docs/icon.png and the iPhone app's icon. Usage: ./scripts/make-icon.swift
+// and docs/icon.png. Usage: ./scripts/make-icon.swift
 import AppKit
 
 let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -84,6 +84,4 @@ iconutil.arguments = ["-c", "icns", iconset.path, "-o", root.appendingPathCompon
 try iconutil.run()
 iconutil.waitUntilExit()
 try render(256).write(to: root.appendingPathComponent("docs/icon.png"))
-try render(1024, fullBleed: true)
-    .write(to: root.appendingPathComponent("ios/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png"))
-print(iconutil.terminationStatus == 0 ? "✓ macos/AppIcon.icns, docs/icon.png, iOS AppIcon" : "✗ iconutil failed")
+print(iconutil.terminationStatus == 0 ? "✓ macos/AppIcon.icns, docs/icon.png" : "✗ iconutil failed")

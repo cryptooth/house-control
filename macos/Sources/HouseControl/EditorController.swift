@@ -1,7 +1,7 @@
 import AppKit
 import WebKit
 
-/// Regular window hosting the home editor (rooms, devices, Smart Life links).
+/// Regular window hosting the home editor (rooms, devices, Home Assistant links).
 final class EditorController: NSObject, NSWindowDelegate {
     let host: WebHost
     private let window: NSWindow

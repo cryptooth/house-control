@@ -1,0 +1,3 @@
+// The app version: what the About box and the release tag (v<MARKETING_VERSION>) say.
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 3

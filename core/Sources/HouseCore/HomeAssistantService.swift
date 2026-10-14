@@ -45,12 +45,6 @@ public final class HomeAssistantService: DeviceService {
         return ["connected": true, "url": config.url, "name": config.name ?? "Home Assistant", "version": config.version ?? ""]
     }
 
-    /// For the iPhone: the Mac shares its connection over the paired, encrypted sync.
-    public var shareable: [String: Any]? {
-        guard let config else { return nil }
-        return ["url": config.url, "token": config.token, "name": config.name ?? "", "version": config.version ?? ""]
-    }
-
     // MARK: - Connecting
 
     /// Checks the address and the token, then keeps them.
@@ -64,19 +58,6 @@ public final class HomeAssistantService: DeviceService {
         candidate.version = about["version"] as? String
         config = candidate
         vault.write(try? JSONEncoder().encode(candidate))
-        listen()
-    }
-
-    /// Takes a connection shared by the Mac; nil removes it.
-    public func adopt(_ shared: [String: Any]?) {
-        guard let shared, let url = shared["url"] as? String, let token = shared["token"] as? String else {
-            if config != nil { disconnect() }
-            return
-        }
-        let name = (shared["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        guard config?.url != url || config?.token != token || config?.name != name else { return }
-        config = Config(url: url, token: token, name: name, version: shared["version"] as? String)
-        vault.write(try? JSONEncoder().encode(config))
         listen()
     }
 

@@ -7,8 +7,8 @@ private final class QueueBox<T>: @unchecked Sendable {
     init(_ value: T) { self.value = value }
 }
 
-/// Finds Home Assistant servers and Hue Bridges on the local network with Bonjour, so
-/// connecting one is a click rather than typing an address.
+/// Finds Home Assistant servers on the local network with Bonjour, so connecting one is a
+/// click rather than typing an address.
 public enum ServiceDiscovery {
     public struct Found {
         public var name: String
@@ -19,7 +19,7 @@ public enum ServiceDiscovery {
         public var dictionary: [String: Any] { ["name": name, "host": host, "port": port, "txt": txt] }
     }
 
-    /// Everything advertising `type` ("_hue._tcp", "_home-assistant._tcp") within `seconds`.
+    /// Everything advertising `type` ("_home-assistant._tcp") within `seconds`.
     public static func browse(_ type: String, seconds: Double = 3) async -> [Found] {
         let browser = NWBrowser(for: .bonjourWithTXTRecord(type: type, domain: nil), using: .tcp)
         let results: Set<NWBrowser.Result> = await withCheckedContinuation { continuation in
@@ -84,23 +84,5 @@ public enum ServiceDiscovery {
                 ?? "http://\(found.host):\(found.port)"
             return ["name": found.txt["location_name"] ?? found.name, "url": url, "version": found.txt["version"] ?? ""]
         }
-    }
-
-    /// Hue Bridges: Bonjour first, then Philips' discovery service for networks that block it.
-    public static func hueBridges() async -> [[String: Any]] {
-        var out = await browse("_hue._tcp").map { found -> [String: Any] in
-            // Real bridges serve HTTPS on 443; anything else (the lab's bridge) keeps its port.
-            ["name": found.name, "host": found.port == 443 ? found.host : "\(found.host):\(found.port)",
-             "bridgeId": found.txt["bridgeid"] ?? ""]
-        }
-        if out.isEmpty, let url = URL(string: "https://discovery.meethue.com/"),
-           let (data, _) = try? await URLSession.shared.data(from: url),
-           let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-            out = list.compactMap { b in
-                guard let ip = b["internalipaddress"] as? String else { return nil }
-                return ["name": "Hue Bridge", "host": ip, "bridgeId": b["id"] as? String ?? ""]
-            }
-        }
-        return out
     }
 }

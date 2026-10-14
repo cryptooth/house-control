@@ -2,10 +2,6 @@ import AppKit
 import HouseCore
 
 MainActor.assumeIsolated {
-    // `--selftest-mapper`, `--selftest-infrared`, `--selftest-transport` and
-    // `--diagnose <id>…` print their result and exit without starting the app.
-    SelfTest.runIfRequested()
-
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate

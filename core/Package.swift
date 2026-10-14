@@ -1,11 +1,10 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// What the macOS and iOS apps share: the Smart Life / Tuya clients, the plan store
-// and the Mac ⇄ iPhone sync.
+// The Mac app's core: the Home Assistant client, the device hub and the plan store.
 let package = Package(
     name: "HouseCore",
-    platforms: [.macOS(.v13), .iOS(.v17)],
+    platforms: [.macOS(.v13)],
     products: [
         .library(name: "HouseCore", targets: ["HouseCore"])
     ],

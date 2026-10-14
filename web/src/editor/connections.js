@@ -1,17 +1,14 @@
-// The editor's "Connections": the smart home platforms House Control can link the plan's
-// lamps and ACs to (Smart Life, Home Assistant, Philips Hue, Apple Home), the screens that
-// connect each one, and the pickers that link a lamp or an AC to one of their devices.
+// The editor's "Connections": the Home Assistant server House Control links the plan's
+// lamps and ACs to, the screen that connects it, and the pickers that link a lamp or an AC
+// to one of its entities.
 import { h } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { isNative, call } from '../bridge.js';
 import { SERVICES, linkOf } from '../config.js';
 
-const ORDER = ['smartlife', 'homeassistant', 'hue', 'homekit'];
+const ORDER = ['homeassistant'];
 const LOOK = {
-  smartlife: { icon: 'plug', tint: '#ff7a3d', blurb: 'Tuya, Smart Life and the many brands built on them' },
   homeassistant: { icon: 'homeassistant', tint: '#18bcf2', blurb: 'Everything it runs: Zigbee, Matter, Nest, Xiaomi, Sonoff…' },
-  hue: { icon: 'bulb', tint: '#c38bff', blurb: 'A Hue Bridge on this network. No account needed' },
-  homekit: { icon: 'home', tint: '#ffb340', blurb: 'HomeKit and Matter accessories, through your iPhone' },
 };
 const KIND_TITLES = { light: 'Lights and plugs', ac: 'Air conditioners', sensor: 'Temperature sensors' };
 
@@ -22,9 +19,8 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
     devices: null,
     errors: {},
     loading: false,
-    found: {},       // service -> discovered servers / bridges
+    found: {},       // service -> discovered servers
     scanning: {},
-    pairing: null,   // { host, until } while waiting for the Hue button
   };
 
   const connected = (id) => Boolean(state.info[id]?.connected);
@@ -51,10 +47,6 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
     rerender();
   }
 
-  // The Mac pushes this when the paired iPhone sent its Apple Home devices.
-  window.house = window.house || {};
-  window.house.servicesChanged = (info) => { state.info = info; load({ quiet: true }); };
-
   /* ---------- sidebar ---------- */
 
   function sidebarRow(active, select) {
@@ -72,12 +64,9 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
 
   function statusText(id) {
     const info = state.info[id] || {};
-    if (id === 'homekit' && info.remote) {
-      return info.connected ? `${info.count} devices from ${info.from || 'your iPhone'}` : 'Set up on your iPhone';
-    }
     if (!info.connected) return 'Not connected';
     const count = devicesOf(id).length;
-    const name = id === 'homeassistant' ? info.name : id === 'hue' ? info.name : id === 'smartlife' ? info.account : '';
+    const name = info.name;
     return [name, state.devices ? `${count} device${count === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || 'Connected';
   }
 
@@ -89,7 +78,7 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
         h('div.svc-text', h('b', SERVICES[id].name), h('span', LOOK[id].blurb)),
         h(`span.svc-status${connected(id) ? '.on' : ''}`, connected(id) ? icon('ok', 13, 2.4) : null, statusText(id)),
         icon('next', 16)))),
-      h('p.note', 'Lamps and ACs stay simulated until you link them: pick one on the plan, then choose its device under “Real device”. One home can mix all four.'),
+      h('p.note', 'Lamps and ACs stay simulated until you link them: pick one on the plan, then choose its entity under “Real device”.'),
       isNative ? null : h('p.note.bad', 'Connecting is only available inside the macOS app (this is the browser preview).'),
     ];
   }
@@ -189,112 +178,14 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
           h('li', 'Under “Long-lived access tokens” press Create token, name it “House Control”, copy it here.')),
         button,
         ha.error ? h('p.note.bad', ha.error) : null,
-        h('p.note', 'The token stays on this Mac (and goes to the iPhones you paired, over their encrypted link). Lights, switches, climate devices and temperature sensors appear here.')),
+        h('p.note', 'The token stays in this Mac’s Keychain and is sent only to the address above. Lights, switches, climate devices and temperature sensors appear here.')),
     ];
-  }
-
-  /* ---------- Philips Hue ---------- */
-
-  let pairTimer = 0;
-  function stopPairing() { clearInterval(pairTimer); pairTimer = 0; state.pairing = null; }
-
-  function pairHue(bridge) {
-    stopPairing();
-    state.pairing = { ...bridge, until: Date.now() + 60_000, error: null };
-    const attempt = async () => {
-      if (!state.pairing) return;
-      if (Date.now() > state.pairing.until) {
-        state.pairing.error = 'Nobody pressed the button in time. Try again.';
-        clearInterval(pairTimer);
-        rerender();
-        return;
-      }
-      try {
-        const r = await call('hue.pair', { host: bridge.host, bridgeId: bridge.bridgeId, name: bridge.name });
-        if (r.waiting) { rerender(); return; }
-        stopPairing();
-        state.info = r;
-        toast(`Paired with ${state.info.hue?.name || 'the Hue Bridge'}`);
-        await load();
-      } catch (e) {
-        if (state.pairing) state.pairing.error = e.message;
-        clearInterval(pairTimer);
-      }
-      rerender();
-    };
-    attempt();
-    pairTimer = setInterval(attempt, 2000);
-    rerender();
-  }
-
-  const hueManual = { host: '' };
-
-  function hue() {
-    const info = state.info.hue || {};
-    if (info.connected) {
-      if (!state.devices && !state.loading) setTimeout(() => load(), 0);
-      return [connectedHeader('hue', 'Bridge', info.name, [info.host, info.bridgeId].filter(Boolean).join(' · ')),
-        deviceList('hue')];
-    }
-    if (state.pairing) {
-      const left = Math.max(0, Math.ceil((state.pairing.until - Date.now()) / 1000));
-      return [section('Pairing',
-        h('div.press',
-          h('div.press-button', h('span')),
-          h('div', h('b', 'Press the round button on the bridge'), h('span', state.pairing.error || `${state.pairing.name || state.pairing.host} · waiting ${left} s`))),
-        h('div.fields',
-          state.pairing.error ? h('button.btn', { onclick: () => pairHue(state.pairing) }, 'Try again') : null,
-          h('button.btn', { onclick: () => { stopPairing(); rerender(); } }, 'Cancel')),
-        h('p.note', 'The big button on top of the Hue Bridge lets one app in for 30 seconds. House Control keeps the key it gets, on this Mac.'))];
-    }
-    if (!state.found.hue && !state.scanning.hue) setTimeout(() => scan('hue'), 0);
-    const found = state.found.hue || [];
-    const host = h('input', { type: 'text', spellcheck: 'false', placeholder: 'e.g. 192.168.1.20', value: hueManual.host });
-    const pairButton = h('button.btn.wide', { onclick: () => pairHue({ host: hueManual.host.trim(), name: 'Hue Bridge' }), disabled: !isNative || !hueManual.host.trim() }, 'Pair');
-    host.addEventListener('input', () => { hueManual.host = host.value; pairButton.disabled = !isNative || !host.value.trim(); });
-    return [
-      section('On your network',
-        state.scanning.hue ? h('p.note.busy', icon('spinner', 13), 'Looking for Hue Bridges…')
-          : found.length ? found.map((b) => h('div.device',
-            h('span.dot.on'), h('div', h('b', b.name), h('span', [b.host, b.bridgeId].filter(Boolean).join(' · '))),
-            h('button.btn.primary', { onclick: () => pairHue(b), disabled: !isNative }, 'Pair')))
-            : h('p.note', 'No bridge found by itself. Type its address below (the Hue app shows it under Settings → My Hue system).'),
-        state.scanning.hue ? null : h('button.btn.link', { onclick: () => scan('hue') }, icon('radar', 13), 'Look again')),
-      section('Or by address',
-        h('label.field', h('span', 'Bridge address'), host),
-        pairButton),
-    ];
-  }
-
-  /* ---------- Apple Home ---------- */
-
-  function homeKit() {
-    const info = state.info.homekit || {};
-    const nodes = [];
-    if (info.connected) {
-      if (!state.devices && !state.loading) setTimeout(() => load(), 0);
-      const when = info.updated ? new Date(info.updated * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
-      nodes.push(section('From your iPhone',
-        h('div.device', h('span.dot.on'), h('div', h('b', info.from || 'iPhone'), h('span', `${info.count} devices · sent ${when}`))),
-        h('div.fields', h('button.btn', { onclick: () => disconnect('homekit') }, 'Forget this list'))),
-      deviceList('homekit'));
-    }
-    nodes.push(section(info.connected ? 'How it works' : 'Set it up on your iPhone',
-      h('ol.steps',
-        h('li', 'Pair your iPhone with this Mac: right-click the menu bar icon → Pair iPhone….'),
-        h('li', 'On the iPhone: House Control → Settings → Apple Home → Connect, and allow access to your Home data.'),
-        h('li', 'Its lamps, air conditioners and thermometers appear here. Link them like any other device.')),
-      h('p.note', 'Apple lets only iPhone, iPad and App Store apps use HomeKit, so the iPhone app switches these devices. On the Mac they show what you set, but stay simulated.')));
-    return nodes;
   }
 
   /* ---------- detail screen ---------- */
 
-  function detail(id, smartLifePanel) {
-    if (id === 'smartlife') return smartLifePanel();
-    if (id === 'homeassistant') return homeAssistant();
-    if (id === 'hue') return hue();
-    return homeKit();
+  function detail() {
+    return homeAssistant();
   }
 
   /* ---------- linking a lamp or an AC ---------- */
@@ -332,7 +223,7 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
     const current = link ? `${link.service}|${link.id}` : '';
     if (!anyConnected()) {
       return section('Real device',
-        h('p.note', 'Simulated. Connect Smart Life, Home Assistant, Philips Hue or Apple Home to control the real one.'),
+        h('p.note', 'Simulated. Connect Home Assistant to control the real one.'),
         h('button.btn.wide', { onclick: () => onOpen(null) }, icon('link', 14), 'Open Connections'));
     }
     if (!state.devices && !state.loading) setTimeout(() => load({ quiet: true }), 0);
@@ -341,14 +232,10 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
       snapshot();
       const value = select.value;
       delete item.link;
-      if (item.tuya) { delete item.tuya.deviceId; if (!Object.keys(item.tuya).length) delete item.tuya; }
       const device = find(value);
       if (value) {
         const [service, id] = value.split('|');
-        if (service === 'smartlife') item.tuya = { ...(item.tuya || {}), deviceId: id };
-        else item.link = { service, id };
-        // Smart Life sensors only work beside a Smart Life AC.
-        if (service !== 'smartlife' && item.tuya) delete item.tuya;
+        item.link = { service, id };
       }
       let note = null;
       if (device && kind === 'light' && device.capabilities) {
@@ -366,23 +253,18 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
     return section('Real device',
       h('label.field', h('span', 'Device'), select),
       info ? h(`p.note${offline ? '.bad' : ''}`, offline ? `${info} · offline` : info) : null,
-      device?.service === 'homekit' && state.info.homekit?.remote ? h('p.note', 'Switched from your iPhone; simulated on this Mac.') : null,
       Object.keys(state.errors).length ? h('p.note.bad', Object.entries(state.errors).map(([s, e]) => `${SERVICES[s]?.name || s}: ${e}`).join(' · ')) : null);
   }
 
-  /** An AC's thermometer: any platform's sensor (a Smart Life one only beside a Smart Life AC). */
+  /** An AC's thermometer: a temperature sensor entity. */
   function sensorSection(item, { snapshot, changed }) {
-    const link = linkOf(item);
-    const current = item.sensor?.id ? `${item.sensor.service}|${item.sensor.id}`
-      : item.tuya?.sensorId ? `smartlife|${item.tuya.sensorId}` : '';
-    const select = picker('sensor', current, (d) => d.service !== 'smartlife' || link?.service === 'smartlife');
+    const current = item.sensor?.id ? `${item.sensor.service}|${item.sensor.id}` : '';
+    const select = picker('sensor', current);
     select.addEventListener('change', () => {
       snapshot();
       delete item.sensor;
-      if (item.tuya) delete item.tuya.sensorId;
       const [service, id] = select.value ? select.value.split('|') : [];
-      if (service === 'smartlife') item.tuya = { ...(item.tuya || {}), sensorId: id };
-      else if (service) item.sensor = { service, id };
+      if (service) item.sensor = { service, id };
       changed();
     });
     return section('Room temperature',
@@ -397,14 +279,13 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
       const l = linkOf(d);
       if (l) out.set(`${l.service}|${l.id}`, d.name || d.id);
       if (d.sensor?.id) out.set(`${d.sensor.service}|${d.sensor.id}`, `${d.name || d.id} · room`);
-      if (d.tuya?.sensorId) out.set(`smartlife|${d.tuya.sensorId}`, `${d.name || d.id} · room`);
     }
     return out;
   }
 
   return {
     state, load, refreshInfo, sidebarRow, overview, detail, tile, deviceSection, sensorSection, usedMap,
-    connected, stopPairing,
+    connected,
     title: (id) => SERVICES[id]?.name,
     blurb: (id) => LOOK[id]?.blurb,
   };

@@ -1,8 +1,7 @@
 import XCTest
 @testable import HouseCore
 
-/// Home Assistant, Philips Hue and Apple Home: their translation to and from the panel's
-/// vocabulary, and the hub's routing. `HOUSE_TEST_HA_URL` + `HOUSE_TEST_HA_TOKEN` also run
+/// Home Assistant: its translation to and from the panel's vocabulary, and the hub's routing. `HOUSE_TEST_HA_URL` + `HOUSE_TEST_HA_TOKEN` also run
 /// the Home Assistant client against a real server (tools/lab/homeassistant.sh starts one).
 @MainActor
 final class ServiceTests: XCTestCase {
@@ -126,80 +125,6 @@ final class ServiceTests: XCTestCase {
         XCTAssertThrowsError(try HomeAssistantService.normalize(""))
     }
 
-    // MARK: - Hue
-
-    func testHueReadsAndWritesLights() {
-        let white: [String: Any] = [
-            "id": "l1", "metadata": ["name": "Desk", "archetype": "classic_bulb"], "on": ["on": true],
-            "dimming": ["brightness": 50.0], "color_temperature": ["mirek": 400, "mirek_valid": true],
-            "color": ["xy": ["x": 0.5, "y": 0.4]],
-        ]
-        let state = HueService.lightState(white)
-        XCTAssertEqual(state["on"] as? Bool, true)
-        XCTAssertEqual(state["brightness"] as? Double, 0.5)
-        XCTAssertEqual(state["temp"] as? Double, 2500)
-        let colour = HueService.lightState(["on": ["on": true], "color_temperature": ["mirek": NSNull(), "mirek_valid": false],
-                                            "color": ["xy": ["x": 0.6915, "y": 0.3083]]])
-        XCTAssertEqual(colour["color"] as? String, "#ff0000")
-        XCTAssertEqual(HueService.device(fromLight: white)?.capabilities, ["brightness", "temp", "color"])
-        XCTAssertEqual(HueService.device(fromLight: ["id": "p", "on": ["on": false]])?.capabilities, [])
-
-        let body = HueService.lightBody(patch: ["on": true, "brightness": 0.42, "temp": 2500.0, "color": "#ff0000"])
-        XCTAssertEqual((body["on"] as? [String: Bool])?["on"], true)
-        XCTAssertEqual((body["dimming"] as? [String: Double])?["brightness"], 42)
-        XCTAssertEqual((body["color_temperature"] as? [String: Int])?["mirek"], 400)
-        XCTAssertEqual(((body["color"] as? [String: Any])?["xy"] as? [String: Double])?["x"] ?? 0, 0.64, accuracy: 0.01)
-        XCTAssertEqual(HueService.roomIndex([["metadata": ["name": "Living"], "children": [["rid": "dev1", "rtype": "device"]]]]),
-                       ["dev1": "Living"])
-        XCTAssertEqual(HueService.temperature(["temperature": ["temperature_report": ["temperature": 21.5]]]), 21.5)
-    }
-
-    // MARK: - Apple Home
-
-    func testHomeKitMapsLights() {
-        XCTAssertEqual(HomeKitMapper.kind(ofService: "00000043-0000-1000-8000-0026bb765291"), .light)
-        XCTAssertEqual(HomeKitMapper.name(ofCharacteristic: "000000CE-0000-1000-8000-0026BB765291"), "colorTemperature")
-        XCTAssertEqual(HomeKitMapper.capabilities(["on", "brightness", "hue", "saturation"]), ["brightness", "color"])
-        let white = HomeKitMapper.lightState(["on": true, "brightness": 40, "colorTemperature": 250, "hue": 30, "saturation": 5])
-        XCTAssertEqual(white["temp"] as? Double, 4000)
-        XCTAssertEqual(white["brightness"] as? Double, 0.4)
-        let colour = HomeKitMapper.lightState(["on": 1, "hue": 120, "saturation": 100])
-        XCTAssertEqual(colour["color"] as? String, "#00ff00")
-        XCTAssertEqual(colour["on"] as? Bool, true)
-        let writes = HomeKitMapper.lightWrites(["on": true, "brightness": 0.5, "temp": 6500.0, "color": "#0000ff"],
-                                               kind: .light, has: ["on", "brightness", "colorTemperature", "hue", "saturation"],
-                                               limits: ["colorTemperature": (153, 500)])
-        XCTAssertEqual(writes.map(\.0), ["on", "brightness", "colorTemperature", "hue", "saturation"])
-        XCTAssertEqual(writes[2].1 as? Int, 154)
-        XCTAssertEqual(writes[3].1 as? Double, 240)
-        XCTAssertEqual(HomeKitMapper.lightWrites(["on": false, "brightness": 0.3], kind: .outlet, has: ["on"]).map(\.0), ["on"])
-    }
-
-    func testHomeKitMapsAirConditioners() {
-        let ac = HomeKitMapper.acState(["active": 1, "targetState": 1, "heatingThreshold": 22, "coolingThreshold": 25,
-                                        "currentTemperature": 20.46, "rotationSpeed": 100, "swing": 0], kind: .heaterCooler)
-        XCTAssertEqual(ac["on"] as? Bool, true)
-        XCTAssertEqual(ac["mode"] as? String, "heat")
-        XCTAssertEqual(ac["target"] as? Double, 22)
-        XCTAssertEqual(ac["roomTemp"] as? Double, 20.5)
-        XCTAssertEqual(ac["fan"] as? String, "high")
-        XCTAssertEqual(ac["swing"] as? String, "off")
-        let features = HomeKitMapper.acFeatures(kind: .heaterCooler, has: ["active", "rotationSpeed"], validModes: [1, 2])
-        XCTAssertEqual(features["modes"] as? [String], ["cool", "heat"])
-        XCTAssertEqual(features["fans"] as? [String], ["low", "medium", "high"])
-        XCTAssertEqual(features["swing"] as? Bool, false)
-
-        let cool = HomeKitMapper.acWrites(["mode": "cool", "target": 24.0], state: ["mode": "heat"], kind: .heaterCooler,
-                                          has: ["active", "targetState", "coolingThreshold", "heatingThreshold"])
-        XCTAssertEqual(cool.map(\.0), ["targetState", "coolingThreshold"])
-        XCTAssertEqual(cool[0].1 as? Int, 2)
-        let off = HomeKitMapper.acWrites(["on": false], state: [:], kind: .thermostat, has: ["targetHeatingCooling"])
-        XCTAssertEqual(off.first?.1 as? Int, 0)
-        let thermostat = HomeKitMapper.acState(["targetHeatingCooling": 3, "targetTemperature": 21.4], kind: .thermostat)
-        XCTAssertEqual(thermostat["mode"] as? String, "auto")
-        XCTAssertEqual(thermostat["target"] as? Double, 21)
-    }
-
     // MARK: - Hub routing
 
     func testHubRoutesLinkedDevicesToTheirPlatform() async {
@@ -207,11 +132,11 @@ final class ServiceTests: XCTestCase {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let fake = FakeService()
-        let hub = DeviceHub(directory: dir, secret: { _ in MemorySecretStore() }, homeKit: fake)
+        let hub = DeviceHub(directory: dir, secret: { _ in MemorySecretStore() }, services: [fake])
         hub.setLinks(from: [
-            "lights": [["id": "lamp", "link": ["service": "homekit", "id": "L1"]], ["id": "sim"]],
-            "acs": [["id": "ac", "link": ["service": "homekit", "id": "A1"], "sensor": ["service": "homekit", "id": "S1"]],
-                    ["id": "ac2", "sensor": ["service": "homekit", "id": "S1"]]],
+            "lights": [["id": "lamp", "link": ["service": "fake", "id": "L1"]], ["id": "sim"]],
+            "acs": [["id": "ac", "link": ["service": "fake", "id": "A1"], "sensor": ["service": "fake", "id": "S1"]],
+                    ["id": "ac2", "sensor": ["service": "fake", "id": "S1"]]],
         ])
         XCTAssertEqual(hub.linkedDeviceCount, 2)
         XCTAssertTrue(hub.canPoll)
@@ -246,13 +171,6 @@ final class ServiceTests: XCTestCase {
         hub.command(["id": "sim", "kind": "light", "patch": ["on": true]]) { simulated = $0 }
         XCTAssertEqual(simulated?["ok"] as? Bool, true)
         XCTAssertTrue(fake.sent.count == 1)
-    }
-
-    func testSmartLifeDevicesGetAKind() {
-        XCTAssertEqual(DeviceHub.smartLifeDevice(["id": "1", "category": "dj", "codes": ["switch_led", "bright_value_v2", "temp_value_v2"]])["kind"] as? String, "light")
-        XCTAssertEqual(DeviceHub.smartLifeDevice(["id": "2", "category": "infrared_ac", "codes": ["PowerOn", "T"]])["kind"] as? String, "ac")
-        XCTAssertEqual(DeviceHub.smartLifeDevice(["id": "3", "category": "wsdcg", "codes": ["temp_current"]])["kind"] as? String, "sensor")
-        XCTAssertEqual(DeviceHub.smartLifeDevice(["id": "1", "category": "dj", "codes": ["switch_led", "bright_value_v2"]])["capabilities"] as? [String], ["brightness"])
     }
 
     // MARK: - A real Home Assistant (opt-in)
@@ -300,59 +218,12 @@ final class ServiceTests: XCTestCase {
         service.disconnect()
         XCTAssertFalse(service.isConnected)
     }
-
-    // MARK: - A Hue Bridge (opt-in)
-
-    /// `HOUSE_TEST_HUE_HOST=localhost:8443` with tools/lab/hue.mjs --auto running.
-    func testLiveHueBridge() async throws {
-        guard let host = ProcessInfo.processInfo.environment["HOUSE_TEST_HUE_HOST"] else {
-            throw XCTSkip("Set HOUSE_TEST_HUE_HOST and run tools/lab/hue.mjs --auto")
-        }
-        let found = await ServiceDiscovery.hueBridges()
-        XCTAssertTrue(found.contains { ($0["bridgeId"] as? String) == "ecb5fafffe0lab01" }, "announced over Bonjour: \(found)")
-
-        let service = HueService(vault: MemorySecretStore())
-        try await service.pair(host: host)
-        XCTAssertTrue(service.isConnected)
-        XCTAssertEqual(service.info["name"] as? String, "Hue Bridge Lab")
-        let devices = try await service.devices()
-        let lamp = try XCTUnwrap(devices.first { $0.name == "Hue color lamp" })
-        XCTAssertEqual(lamp.capabilities, ["brightness", "temp", "color"])
-        XCTAssertEqual(lamp.room, "Living room")
-        XCTAssertEqual(devices.first { $0.name == "Hue smart plug" }?.capabilities, [])
-        let sensor = try XCTUnwrap(devices.first { $0.kind == .sensor })
-
-        let changed = expectation(description: "event stream")
-        changed.assertForOverFulfill = false
-        service.watch([lamp.id])
-        service.onChange = { changed.fulfill() }
-        try await Task.sleep(nanoseconds: 500_000_000) // let the stream connect
-        try await service.send(kind: .light, id: lamp.id, patch: ["on": true, "brightness": 0.3, "color": "#0000ff"], state: [:])
-        await fulfillment(of: [changed], timeout: 5)
-        var readings = try await service.read([lamp.id, sensor.id])
-        XCTAssertEqual(readings[lamp.id]?.light?["on"] as? Bool, true)
-        XCTAssertEqual(readings[lamp.id]?.light?["brightness"] as? Double ?? 0, 0.3, accuracy: 0.001)
-        let blue = ColorMath.rgb(readings[lamp.id]?.light?["color"] as? String ?? "")
-        XCTAssertGreaterThan(blue?.b ?? 0, 0.9)
-        XCTAssertNotNil(readings[sensor.id]?.temperature)
-        try await service.send(kind: .light, id: lamp.id, patch: ["temp": 2700.0], state: [:])
-        readings = try await service.read([lamp.id])
-        XCTAssertEqual(readings[lamp.id]?.light?["temp"] as? Double ?? 0, 2700, accuracy: 20)
-
-        // The key and the certificate travel to the iPhone together.
-        let phone = HueService(vault: MemorySecretStore())
-        phone.adopt(service.shareable)
-        let onPhone = try await phone.devices()
-        XCTAssertEqual(onPhone.count, devices.count)
-        service.disconnect()
-        phone.disconnect()
-    }
 }
 
 /// A platform that answers from memory.
 @MainActor
 private final class FakeService: DeviceService {
-    let id = "homekit"
+    let id = "fake"
     let title = "Fake"
     var onChange: (() -> Void)?
     var isConnected: Bool { true }
