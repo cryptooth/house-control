@@ -20,6 +20,8 @@ public final class HomeAssistantService: DeviceService {
     private let vault: SecretStore
     private var config: Config?
     private let session: URLSession
+    /// For the history API, which can take a while to gather a week of a busy sensor.
+    private let slowSession: URLSession
     private var socket: URLSessionWebSocketTask?
     private var socketRetry: Task<Void, Never>?
     /// Each climate entity's own names for the panel's fan speeds and modes, from the last read.
@@ -34,6 +36,9 @@ public final class HomeAssistantService: DeviceService {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         session = URLSession(configuration: configuration)
+        let slow = URLSessionConfiguration.ephemeral
+        slow.timeoutIntervalForRequest = 60
+        slowSession = URLSession(configuration: slow)
         config = vault.read().flatMap { try? JSONDecoder().decode(Config.self, from: $0) }
         if config != nil { listen() }
     }
@@ -298,11 +303,83 @@ public final class HomeAssistantService: DeviceService {
         return out
     }
 
+    // MARK: - Charts
+
+    /// Every sensor whose state is a number, for the charts window.
+    public func numericSensors() async throws -> [[String: Any]] {
+        let states = try await request("GET", "/api/states") as? [[String: Any]] ?? []
+        let areas = (try? await areaNames(for: [])) ?? [:]
+        return states.compactMap { state -> [String: Any]? in
+            guard var sensor = Self.numericSensor(from: state) else { return nil }
+            if let id = sensor["id"] as? String, let room = areas[id] { sensor["room"] = room }
+            return sensor
+        }.sorted { ($0["name"] as? String ?? "") < ($1["name"] as? String ?? "") }
+    }
+
+    /// The recorded values of one sensor over the last `hours`, as `[milliseconds, value]`
+    /// pairs, averaged into at most `points` buckets so a week of a chatty sensor stays light.
+    public func history(of id: String, hours: Double, points: Int = 480) async throws -> [[Double]] {
+        guard Self.isEntityId(id) else { throw ServiceFailure("“\(id)” is not an entity id") }
+        let end = Date(), start = end.addingTimeInterval(-max(1, min(hours, 24 * 31)) * 3600)
+        let iso = ISO8601DateFormatter()
+        let path = "/api/history/period/\(iso.string(from: start))?filter_entity_id=\(id)"
+            + "&end_time=\(iso.string(from: end))&minimal_response&no_attributes"
+        let lists = try await request("GET", path, slow: true) as? [[[String: Any]]] ?? []
+        return Self.series(from: lists.first ?? [], start: start, end: end, points: points)
+    }
+
+    static func isEntityId(_ id: String) -> Bool {
+        let parts = id.split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count == 2 && parts.allSatisfy { !$0.isEmpty && $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") } }
+    }
+
+    static func numericSensor(from state: [String: Any]) -> [String: Any]? {
+        guard let id = state["entity_id"] as? String, id.hasPrefix("sensor."),
+              let value = Double(state["state"] as? String ?? ""), value.isFinite else { return nil }
+        let attributes = state["attributes"] as? [String: Any] ?? [:]
+        // A number without a unit or a state class is usually an id or a counter nobody charts.
+        guard attributes["unit_of_measurement"] != nil || attributes["state_class"] != nil else { return nil }
+        return ["id": id, "name": attributes["friendly_name"] as? String ?? id, "value": value,
+                "unit": attributes["unit_of_measurement"] as? String ?? "",
+                "deviceClass": attributes["device_class"] as? String ?? ""]
+    }
+
+    /// History API states → points. The first state can predate `start` (it is the value
+    /// the sensor had then), so it is pinned to `start`.
+    static func series(from states: [[String: Any]], start: Date, end: Date, points: Int) -> [[Double]] {
+        let t0 = start.timeIntervalSince1970 * 1000, t1 = end.timeIntervalSince1970 * 1000
+        var raw: [(t: Double, v: Double)] = []
+        for state in states {
+            guard let v = Double(state["state"] as? String ?? ""), v.isFinite,
+                  let when = (state["last_changed"] ?? state["last_updated"]) as? String,
+                  let date = parseDate(when) else { continue }
+            raw.append((min(t1, max(t0, date.timeIntervalSince1970 * 1000)), v))
+        }
+        raw.sort { $0.t < $1.t }
+        guard points > 0, raw.count > points, t1 > t0 else { return raw.map { [$0.t, $0.v] } }
+        let width = (t1 - t0) / Double(points)
+        var buckets: [Int: (t: Double, v: Double, n: Double)] = [:]
+        for p in raw {
+            let key = min(points - 1, Int((p.t - t0) / width))
+            let b = buckets[key] ?? (0, 0, 0)
+            buckets[key] = (b.t + p.t, b.v + p.v, b.n + 1)
+        }
+        return buckets.keys.sorted().compactMap { key in
+            buckets[key].map { [$0.t / $0.n, $0.v / $0.n] }
+        }
+    }
+
+    static func parseDate(_ text: String) -> Date? {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return precise.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+
     // MARK: - HTTP
 
     @discardableResult
     private func request(_ method: String, _ path: String, body: [String: Any]? = nil,
-                         raw: Bool = false, config: Config? = nil) async throws -> Any? {
+                         raw: Bool = false, config: Config? = nil, slow: Bool = false) async throws -> Any? {
         guard let config = config ?? self.config, let url = URL(string: config.url + path) else {
             throw ServiceFailure("Connect Home Assistant first")
         }
@@ -315,7 +392,7 @@ public final class HomeAssistantService: DeviceService {
         }
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await (slow ? slowSession : session).data(for: request)
         } catch {
             throw ServiceFailure("Home Assistant at \(config.url) did not answer: \(error.localizedDescription)")
         }

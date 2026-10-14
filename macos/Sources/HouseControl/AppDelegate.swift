@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: PanelController!
     private var editor: EditorController?
+    private var charts: ChartsController?
     private var pollTimer: Timer?
     private var lastSummary: [String: Any] = [:]
 
@@ -48,6 +49,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if ProcessInfo.processInfo.environment["HOUSE_OPEN_EDITOR"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.openEditor() }
+        }
+        if ProcessInfo.processInfo.environment["HOUSE_OPEN_CHARTS"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.openCharts() }
         }
         if ProcessInfo.processInfo.environment["HOUSE_OPEN_ON_LAUNCH"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.togglePanel() }
@@ -106,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.hide()
             let menu = NSMenu()
             menu.addItem(withTitle: "Edit Home…", action: #selector(openEditor), keyEquivalent: "").target = self
+            menu.addItem(withTitle: "Charts…", action: #selector(openCharts), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Load Floor Plan…", action: #selector(loadPlan), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Reveal Plan File", action: #selector(revealPlan), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Reveal Device Log", action: #selector(revealLog), keyEquivalent: "").target = self
@@ -202,6 +207,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editor?.show()
     }
 
+    @objc private func openCharts() {
+        panel.hide()
+        if charts == nil {
+            let host = WebHost(mode: "charts", transparent: false) { [unowned self] in ["services": self.hub.servicesInfo] }
+            host.onMessage = { [weak self, unowned host] message in self?.handle(message, from: host) }
+            let controller = ChartsController(host: host)
+            controller.onClose = { [weak self, unowned host] in
+                host.webView.configuration.userContentController.removeScriptMessageHandler(forName: "house")
+                self?.charts = nil
+            }
+            charts = controller
+            host.load()
+        }
+        charts?.show()
+    }
+
     private func alert(_ title: String, _ text: String) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
@@ -239,6 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "loadPlan": loadPlan()
         case "revealPlan": revealPlan()
         case "openEditor": openEditor()
+        case "openCharts": openCharts()
         case "quit": NSApp.terminate(nil)
 
         // Editor
@@ -294,6 +316,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     try await hub.homeAssistant.connect(url: message["url"] as? String ?? "", token: message["token"] as? String ?? "")
                     connectionsChanged()
                     host.reply(to: message, hub.servicesInfo)
+                } catch {
+                    host.reply(to: message, ["error": error.localizedDescription])
+                }
+            }
+        case "charts.sensors":
+            Task { @MainActor in
+                do {
+                    host.reply(to: message, ["sensors": try await hub.homeAssistant.numericSensors()])
+                } catch {
+                    host.reply(to: message, ["error": error.localizedDescription])
+                }
+            }
+        case "charts.history":
+            let id = message["id"] as? String ?? ""
+            let hours = (message["hours"] as? NSNumber)?.doubleValue ?? 24
+            Task { @MainActor in
+                do {
+                    host.reply(to: message, ["points": try await hub.homeAssistant.history(of: id, hours: hours)])
                 } catch {
                     host.reply(to: message, ["error": error.localizedDescription])
                 }

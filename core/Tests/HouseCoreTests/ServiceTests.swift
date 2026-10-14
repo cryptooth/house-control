@@ -125,6 +125,46 @@ final class ServiceTests: XCTestCase {
         XCTAssertThrowsError(try HomeAssistantService.normalize(""))
     }
 
+    // MARK: - Charts
+
+    func testHomeAssistantFindsNumericSensors() {
+        let humidity = HomeAssistantService.numericSensor(from: [
+            "entity_id": "sensor.bath_humidity", "state": "61.5",
+            "attributes": ["friendly_name": "Bath humidity", "unit_of_measurement": "%", "device_class": "humidity"],
+        ])
+        XCTAssertEqual(humidity?["value"] as? Double, 61.5)
+        XCTAssertEqual(humidity?["unit"] as? String, "%")
+        XCTAssertEqual(humidity?["deviceClass"] as? String, "humidity")
+        XCTAssertNil(HomeAssistantService.numericSensor(from: ["entity_id": "sensor.x", "state": "unavailable",
+                                                                "attributes": ["unit_of_measurement": "%"]]))
+        XCTAssertNil(HomeAssistantService.numericSensor(from: ["entity_id": "sensor.build", "state": "42", "attributes": [:]]))
+        XCTAssertNil(HomeAssistantService.numericSensor(from: ["entity_id": "light.x", "state": "1",
+                                                                "attributes": ["unit_of_measurement": "%"]]))
+        XCTAssertTrue(HomeAssistantService.isEntityId("sensor.living_room_temperature_2"))
+        XCTAssertFalse(HomeAssistantService.isEntityId("sensor.x&end_time=0"))
+        XCTAssertFalse(HomeAssistantService.isEntityId("sensor"))
+    }
+
+    func testHomeAssistantHistoryBecomesPoints() throws {
+        let start = try XCTUnwrap(HomeAssistantService.parseDate("2026-10-14T00:00:00+00:00"))
+        let end = start.addingTimeInterval(3600)
+        let states: [[String: Any]] = [
+            ["entity_id": "sensor.t", "state": "20.5", "last_changed": "2026-10-13T22:00:00.123456+00:00"],
+            ["state": "unavailable", "last_changed": "2026-10-14T00:10:00+00:00"],
+            ["state": "21", "last_changed": "2026-10-14T00:30:00.5+00:00"],
+            ["state": "22", "last_changed": "2026-10-14T00:40:00+00:00"],
+        ]
+        let points = HomeAssistantService.series(from: states, start: start, end: end, points: 10)
+        XCTAssertEqual(points.count, 3)
+        XCTAssertEqual(points[0][0], start.timeIntervalSince1970 * 1000) // the value it had at the start
+        XCTAssertEqual(points[0][1], 20.5)
+        XCTAssertEqual(points[2][1], 22)
+
+        let averaged = HomeAssistantService.series(from: states, start: start, end: end, points: 1)
+        XCTAssertEqual(averaged.count, 1)
+        XCTAssertEqual(averaged[0][1], (20.5 + 21 + 22) / 3, accuracy: 0.001)
+    }
+
     // MARK: - Hub routing
 
     func testHubRoutesLinkedDevicesToTheirPlatform() async {
