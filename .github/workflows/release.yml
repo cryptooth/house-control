@@ -1,6 +1,6 @@
 # Builds the Mac app on GitHub's machines and attaches the disk image to a draft release.
 #
-#   Push a tag v<version> (the version in ios/Config/Base.xcconfig) → a draft release with
+#   Push a tag v<version> (the version in macos/Version.xcconfig) → a draft release with
 #   HouseControl-<version>.dmg and its SHA-256 appears under Releases; publish it by hand.
 #   Run it from the Actions tab instead → the same image as a downloadable artifact, no release.
 #
@@ -47,10 +47,10 @@ jobs:
       - name: Check the tag matches the app version
         id: version
         run: |
-          version="$(sed -n 's/^MARKETING_VERSION *= *//p' ios/Config/Base.xcconfig)"
+          version="$(sed -n 's/^MARKETING_VERSION *= *//p' macos/Version.xcconfig)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match MARKETING_VERSION $version in ios/Config/Base.xcconfig"
+            echo "::error::Tag $GITHUB_REF_NAME does not match MARKETING_VERSION $version in macos/Version.xcconfig"
             exit 1
           fi
 

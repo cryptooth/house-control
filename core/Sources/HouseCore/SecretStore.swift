@@ -1,8 +1,8 @@
 import Foundation
 import Security
 
-/// Where a secret (the Smart Life session, the sync key) is kept. The Mac app uses a
-/// file only its user can read, next to the plan; the iPhone app uses the Keychain.
+/// Where a secret (the Home Assistant token) is kept: the Keychain in the app, a file only
+/// its user can read for throw-away runs (HOUSE_DATA_DIR), memory in the tests.
 public protocol SecretStore {
     func read() -> Data?
     /// Stores `data`; nil removes the secret.
@@ -33,7 +33,7 @@ public struct FileSecretStore: SecretStore {
 }
 
 /// A generic-password Keychain item that never leaves this device (no iCloud Keychain,
-/// not part of a backup restored to another phone).
+/// not part of a backup restored to another Mac).
 public struct KeychainSecretStore: SecretStore {
     public let service: String
     public let account: String

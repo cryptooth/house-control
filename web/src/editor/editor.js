@@ -35,22 +35,15 @@ export async function bootEditor(root) {
   let doc = structuredClone(await loadRawConfig());
   for (const key of Object.values(KEYS)) doc[key] ||= [];
 
-  // HOUSE_OPEN_EDITOR=connections|smartlife|homeassistant|hue|homekit opens a connection screen.
+  // HOUSE_OPEN_EDITOR=connections|homeassistant opens a connection screen.
   const startAt = window.__HOUSE_BOOT__?.section || new URLSearchParams(location.search).get('section') || '';
   let sel = startAt === 'connections' ? { kind: 'connections' }
-    : startAt.startsWith('service:') ? { kind: 'service', service: startAt.slice(8) }
-      : startAt === 'tuya' ? { kind: 'service', service: 'smartlife' } : { kind: 'home' };
+    : startAt.startsWith('service:') ? { kind: 'service', service: startAt.slice(8) } : { kind: 'home' };
   let dirty = false;
   let world = null;
   let previewLights = true;
   const undo = [];
   const redo = [];
-  const tuya = {
-    info: window.__HOUSE_BOOT__?.tuya || { configured: false, accessId: '', region: 'eu' },
-    account: window.__HOUSE_BOOT__?.smartLife || { connected: false, userCode: '', account: '' },
-    devices: null, busy: false, error: null, qr: null,
-    get linked() { return this.account.connected || this.info.configured; },
-  };
   const links = createConnections({
     rerender: () => {
       renderSidebar();
@@ -60,8 +53,6 @@ export async function bootEditor(root) {
     usedBy: () => links.usedMap(doc),
     onOpen: (service) => select(service ? { kind: 'service', service } : { kind: 'connections' }),
   });
-  // Smart Life signed in or out on its own screen: the overview and the pickers follow.
-  const smartLifeChanged = () => links.refreshInfo().then(() => links.load({ quiet: true }));
 
   /* ---------- layout ---------- */
 
@@ -526,10 +517,10 @@ export async function bootEditor(root) {
       head('Connections', 'Where your real lamps and air conditioners live');
       nodes.push(...links.overview());
     } else if (kind === 'service') {
-      nodes.push(h('button.back-link', { onclick: () => { links.stopPairing(); select({ kind: 'connections' }); } }, icon('back', 14, 2.2), 'Connections'));
+      nodes.push(h('button.back-link', { onclick: () => select({ kind: 'connections' }) }, icon('back', 14, 2.2), 'Connections'));
       nodes.push(h('div.insp-head.svc-head', links.tile(sel.service, 40),
         h('div', h('h2', links.title(sel.service)), h('span', links.blurb(sel.service)))));
-      nodes.push(...[links.detail(sel.service, tuyaPanel)].flat());
+      nodes.push(...[links.detail(sel.service)].flat());
     } else if (!item) {
       head('Nothing selected');
     } else if (kind === 'room') {
@@ -640,125 +631,6 @@ export async function bootEditor(root) {
     }
   }
 
-  /* ---------- Smart Life ---------- */
-
-  let loginTimer = 0;
-  function stopLoginPolling() { clearInterval(loginTimer); loginTimer = 0; }
-
-  async function fetchDevices() {
-    tuya.busy = true; tuya.error = null;
-    if (sel.kind === 'service') renderInspector();
-    try {
-      tuya.devices = (await call('tuya.devices')).devices;
-    } catch (e) {
-      tuya.error = e.message;
-      tuya.devices = null;
-    }
-    tuya.busy = false;
-    renderSidebar();
-    if (sel.kind === 'service') renderInspector();
-  }
-
-  function deviceList() {
-    if (tuya.busy) return h('p.note', 'Talking to Smart Life…');
-    if (tuya.error) return h('p.note.bad', tuya.error);
-    if (!tuya.devices) return null;
-    if (!tuya.devices.length) return h('p.note.bad', 'Connected, but this account has no devices yet.');
-    const used = new Map([...doc.lights, ...doc.acs].filter((d) => d.tuya?.deviceId).map((d) => [d.tuya.deviceId, d.name]));
-    return h('div.devices-list', h('h3', `${tuya.devices.length} devices in your account`), tuya.devices.map((d) => h('div.device',
-      h(`span.dot${d.online ? '.on' : ''}`),
-      h('div', h('b', d.name), h('span', `${d.product || d.category || 'device'} · ${d.codes.join(', ') || 'no functions reported'}`)),
-      used.has(d.id) ? h('span.pill.on', used.get(d.id)) : null)));
-  }
-
-  function tuyaPanel() {
-    const nodes = [];
-    if (!isNative) nodes.push(h('p.note.bad', 'Connecting is only available inside the macOS app (this is the browser preview).'));
-
-    if (tuya.account.connected) {
-      nodes.push(section('Smart Life account',
-        h('div.device', h('span.dot.on'), h('div', h('b', tuya.account.account || 'Signed in'), h('span', `User Code ${tuya.account.userCode}`))),
-        h('div.fields',
-          h('button.btn', { onclick: fetchDevices }, 'Refresh devices'),
-          h('button.btn', { onclick: async () => {
-            stopLoginPolling();
-            tuya.account = await call('smartlife.signOut');
-            tuya.devices = null; tuya.qr = null;
-            renderSidebar(); renderInspector();
-            smartLifeChanged();
-          } }, 'Sign out')),
-        h('p.note', 'Pick a lamp or an AC on the plan, choose its device under “Smart Life device”, then press “Save & apply”.')),
-      deviceList());
-      if (!tuya.devices && !tuya.busy && !tuya.error && isNative) setTimeout(fetchDevices, 0);
-    } else {
-      const codeInput = text();
-      codeInput.value = tuya.account.userCode || '';
-      codeInput.placeholder = 'e.g. aB12cD3';
-      const message = h('p.note');
-      const qrBox = h('div.qr');
-      const start = async () => {
-        stopLoginPolling();
-        message.className = 'note';
-        message.textContent = 'Requesting a login code…';
-        qrBox.replaceChildren();
-        try {
-          const userCode = codeInput.value.trim();
-          const { token, qr } = await call('smartlife.begin', { userCode });
-          qrBox.replaceChildren(h('img', { src: qr, alt: 'Smart Life login QR code', width: 220, height: 220 }));
-          message.textContent = 'Scan this code with the Smart Life app (the scan icon on the Home tab) and confirm the login. Waiting…';
-          let tries = 0;
-          loginTimer = setInterval(async () => {
-            if (++tries > 90) { stopLoginPolling(); message.className = 'note bad'; message.textContent = 'The code expired. Press “Show QR code” again.'; return; }
-            const r = await call('smartlife.poll', { token, userCode }).catch(() => null);
-            if (!r?.connected) return;
-            stopLoginPolling();
-            tuya.account = r.info;
-            renderSidebar();
-            renderInspector();
-            smartLifeChanged();
-          }, 2000);
-        } catch (e) {
-          message.className = 'note bad';
-          message.textContent = e.message;
-        }
-      };
-      nodes.push(section('Sign in with the Smart Life app',
-        h('ol.steps',
-          h('li', 'In the Smart Life app open Me → ⚙ Settings → Account and Security and copy the User Code at the bottom.'),
-          h('li', 'Type it here and press “Show QR code”.'),
-          h('li', 'Scan the code with the Smart Life app and confirm.')),
-        h('label.field', h('span', 'User Code'), codeInput),
-        h('button.btn.primary.wide', { onclick: start, disabled: !isNative }, 'Show QR code'),
-        qrBox, message,
-        h('p.note', 'Free and needs no Tuya developer account: this is the same sign-in the Home Assistant integration uses. The session is stored only on this Mac.')));
-    }
-
-    // The developer-project route stays available for those who already have one.
-    const idInput = text();
-    idInput.value = tuya.info.accessId || '';
-    idInput.placeholder = 'Access ID / Client ID';
-    const secretInput = h('input', { type: 'password', autocomplete: 'off' });
-    secretInput.placeholder = tuya.info.hasSecret ? '•••••••• (saved — leave empty to keep)' : 'Access Secret / Client Secret';
-    const region = choice(REGIONS.map(([id, label]) => [id, `${label} (${id})`]));
-    region.value = tuya.info.region || 'eu';
-    const saveCloud = async () => {
-      try {
-        tuya.info = await call('tuya.save', { accessId: idInput.value, accessSecret: secretInput.value, region: region.value });
-        renderSidebar();
-        smartLifeChanged();
-        if (tuya.info.configured) await fetchDevices(); else renderInspector();
-      } catch (e) { toast(e.message, true); }
-    };
-    nodes.push(h('details.advanced', h('summary', 'Advanced: Tuya Cloud project instead'),
-      h('p.note', 'Only if you already have a project on platform.tuya.com with your app account linked. The QR sign-in above takes priority when both are set.'),
-      h('label.field', h('span', 'Access ID'), idInput),
-      h('label.field', h('span', 'Access Secret'), secretInput),
-      h('label.field', h('span', 'Data center'), region),
-      h('button.btn.wide', { onclick: saveCloud, disabled: !isNative }, 'Save & fetch devices'),
-      tuya.account.connected ? null : deviceList()));
-    return nodes;
-  }
-
   /* ---------- file actions ---------- */
 
   async function save() {
@@ -857,5 +729,5 @@ export async function bootEditor(root) {
   dirty = false;
   validate();
   schedulePreview(0);
-  window.__editor = { get doc() { return doc; }, select, tuya, links };
+  window.__editor = { get doc() { return doc; }, select, links };
 }

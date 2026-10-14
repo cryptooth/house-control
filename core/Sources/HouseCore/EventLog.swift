@@ -1,6 +1,6 @@
 import Foundation
 
-/// A small text log of what was sent to real devices and what the cloud answered:
+/// A small text log of what was sent to real devices and what they answered:
 /// `events.log` next to the plan. It is the first thing to look at when a device
 /// does not react. Never contains tokens; it stays on this Mac.
 public final class EventLog {
@@ -31,9 +31,5 @@ public final class EventLog {
             return
         }
         try? handle.write(contentsOf: data)
-    }
-
-    public static func describe(_ commands: [[String: Any]]) -> String {
-        commands.map { "\($0["code"] ?? "?")=\($0["value"] ?? "?")" }.joined(separator: " ")
     }
 }

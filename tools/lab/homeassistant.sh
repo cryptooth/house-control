@@ -6,8 +6,7 @@
 #   ./tools/lab/homeassistant.sh        → http://<this Mac>:8123, prints a token for House Control
 #
 # Sign in to the web UI as lab / lab-lab-lab. Delete tools/lab/.ha to start from scratch.
-# To try your real devices too, add their integration in the web UI (Settings → Devices &
-# services): "Tuya" signs in to Smart Life with the same QR code as House Control does.
+# To try your real devices too, add their integration in the web UI (Settings → Devices & services).
 set -euo pipefail
 LAB="$(cd "$(dirname "$0")" && pwd)"
 HA="${HA_HOME:-$LAB/.ha}"

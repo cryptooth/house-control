@@ -13,10 +13,10 @@
 #   uv (brew install uv), which runs dmgbuild to lay out the disk image.
 # UNSIGNED=1 skips the certificate and notarization: the app stays signed ad hoc. This is the image
 # .github/workflows/release.yml publishes; macOS asks people to allow it once (see README → Download).
-# The version is MARKETING_VERSION in ios/Config/Base.xcconfig, shared with the iPhone app.
+# The version is MARKETING_VERSION in macos/Version.xcconfig.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="$(sed -n 's/^MARKETING_VERSION *= *//p' "$ROOT/ios/Config/Base.xcconfig")"
+VERSION="$(sed -n 's/^MARKETING_VERSION *= *//p' "$ROOT/macos/Version.xcconfig")"
 # Its own folder, so a release build never replaces the app you run from build/.
 # The bundle is named with a space here, which is what people see in Applications.
 APP="$ROOT/build/release/House Control.app"

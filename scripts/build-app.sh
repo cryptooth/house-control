@@ -6,9 +6,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${APP_PATH:-$ROOT/build/HouseControl.app}"
-# One version for both apps: the iPhone app's MARKETING_VERSION / CURRENT_PROJECT_VERSION.
-VERSION="${VERSION:-$(sed -n 's/^MARKETING_VERSION *= *//p' "$ROOT/ios/Config/Base.xcconfig")}"
-BUILD="${BUILD:-$(sed -n 's/^CURRENT_PROJECT_VERSION *= *//p' "$ROOT/ios/Config/Base.xcconfig")}"
+# The version is MARKETING_VERSION / CURRENT_PROJECT_VERSION in macos/Version.xcconfig.
+VERSION="${VERSION:-$(sed -n 's/^MARKETING_VERSION *= *//p' "$ROOT/macos/Version.xcconfig")}"
+BUILD="${BUILD:-$(sed -n 's/^CURRENT_PROJECT_VERSION *= *//p' "$ROOT/macos/Version.xcconfig")}"
 
 echo "▸ Building web UI"
 cd "$ROOT/web"
@@ -46,14 +46,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHumanReadableCopyright</key><string>© 0xProbability. MIT License.</string>
   <key>LSUIElement</key><true/>
-  <key>NSLocalNetworkUsageDescription</key><string>House Control finds your Home Assistant and Hue Bridge on this network, and lets the iPhones you paired find this Mac to receive your floor plan.</string>
-  <key>NSBonjourServices</key><array><string>_housecontrol._tcp</string><string>_hue._tcp</string><string>_home-assistant._tcp</string></array>
+  <key>NSLocalNetworkUsageDescription</key><string>House Control finds your Home Assistant on this network.</string>
+  <key>NSBonjourServices</key><array><string>_home-assistant._tcp</string></array>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>
 PLIST
-# Ad-hoc by default. macOS ties permissions (the Local Network one that iPhone sync needs)
-# to the signature, and an ad-hoc one changes with every build, so it asks again each time.
+# Ad-hoc by default. macOS ties permissions (Local Network, the Keychain item holding the
+# token) to the signature, and an ad-hoc one changes with every build, so it asks again each time.
 # CODESIGN_IDENTITY="Apple Development: …" (see `security find-identity -v -p codesigning`)
 # signs with your own certificate and the permission sticks.
 # A real identity also gets the hardened runtime and a secure timestamp, which notarization requires.
