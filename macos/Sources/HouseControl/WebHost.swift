@@ -8,7 +8,7 @@ private final class FirstMouseWebView: WKWebView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// A WKWebView showing the web UI in one of its modes ("panel", "editor", "island" or "agent"),
+/// A WKWebView showing the web UI in one of its modes ("panel", "editor" or "island"),
 /// plus the JSON message bridge in both directions.
 final class WebHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let webView: WKWebView

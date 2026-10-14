@@ -2,7 +2,6 @@ import { loadRawConfig, normalize, isLinked } from './config.js';
 import { createStore } from './store.js';
 import { createWorld } from './three/world.js';
 import { createPanel } from './ui/panel.js';
-import { createAgent } from './agent/tools.js';
 import { h, openMenu } from './ui/dom.js';
 import { icon } from './ui/icons.js';
 import { isNative, isPhone, post, incoming, haptic } from './bridge.js';
@@ -41,10 +40,8 @@ function fatal(title, error) {
 
 async function boot() {
   let config;
-  let raw;
   try {
-    raw = await loadRawConfig();
-    config = normalize(structuredClone(raw));
+    config = normalize(structuredClone(await loadRawConfig()));
   } catch (error) {
     fatal('Could not open this home', error);
     return;
@@ -65,7 +62,6 @@ async function boot() {
     onFocus: (target) => world?.focus(target),
     onMenu: (anchor, reason) => {
       if (reason === 'escape') post('close');
-      else if (reason === 'agent') post('openAgent');
       else if (isPhone) post('openSettings'); // plans, sync and sign-in are native screens there
       else planMenu(anchor);
     },
@@ -111,22 +107,6 @@ async function boot() {
   incoming.applyRemote = (update) => store.applyRemote(update);
   incoming.adopt = (state) => store.adopt(state);
   incoming.share = () => store.share();
-  // AI Access: an AI assistant's requests are run here, where the state of every device lives.
-  const agent = createAgent({
-    store, config, raw,
-    render: (room) => renderShot(config, store, room),
-    onAction: ({ client, summary }) => { if (summary) panel.toast(summary, client || 'AI'); },
-  });
-  incoming.agent = async (request) => {
-    store.source = request.client || 'AI'; // the other views say who made the change
-    try {
-      return JSON.stringify(await agent.handle(request));
-    } finally {
-      store.source = null;
-    }
-  };
-  incoming.agentLive = (live) => panel.setAgentLive(Boolean(live));
-  panel.setAgentLive(Boolean(window.__HOUSE_BOOT__?.agentLive));
 
   store.onDeviceError = (id, message) => {
     const name = store.lightCfg.get(id)?.name || store.acCfg.get(id)?.name || id;
@@ -160,7 +140,6 @@ async function boot() {
     if (isNative) {
       items.push('-',
         { label: 'Edit home…', action: () => post('openEditor') },
-        { label: 'AI access…', action: () => post('openAgent') },
         { label: 'Load floor plan…', action: () => post('loadPlan') },
         { label: 'Reveal plan file', action: () => post('revealPlan') },
         '-',
@@ -178,31 +157,10 @@ async function boot() {
   window.__house = { store, world, panel, config }; // handy in the dev console
 }
 
-// A still of the 3D model for an AI checking its own edit: a second, off-screen world
-// rendered once and thrown away, so the panel's own view is left as it is.
-async function renderShot(config, store, room) {
-  const canvas = h('canvas', { style: { width: '100%', height: '100%', display: 'block' } });
-  const holder = h('div', { style: { position: 'fixed', left: '-4000px', top: '0', width: '880px', height: '660px', pointerEvents: 'none' } }, canvas);
-  document.body.append(holder);
-  let shot;
-  try {
-    shot = createWorld(canvas, config, store, { onHover() {}, onPick() {} });
-    shot.setInsets(0, 0);
-    if (room) shot.focus({ kind: 'room', id: room });
-    shot.settle(8);
-    return canvas.toDataURL('image/jpeg', 0.86);
-  } finally {
-    shot?.dispose();
-    holder.remove();
-  }
-}
-
 const mode = window.__HOUSE_BOOT__?.mode || new URLSearchParams(location.search).get('mode') || 'panel';
 if (mode === 'editor') {
   document.documentElement.classList.add('mode-editor');
   import('./editor/editor.js').then((m) => m.bootEditor(app)).catch((e) => fatal('Editor failed to start', e));
-} else if (mode === 'agent') {
-  import('./agent/console.js').then((m) => m.bootConsole(app)).catch((e) => fatal('AI Access failed to start', e));
 } else if (mode === 'island') {
   document.documentElement.classList.add('mode-island');
   import('./island/island.js').then((m) => m.bootIsland(app)).catch((e) => console.error(e));
