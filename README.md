@@ -26,6 +26,8 @@ Assistant and to nothing else, and nothing on your Mac is opened to the network.
 - **Lights.** Tap to toggle, drag across a tile to dim, open a light for brightness, white temperature and colour.
 - **Air conditioners.** Power, target temperature, mode and fan speed, with the room temperature from a real sensor if you have one.
 - **Scenes.** One tap sets every light and AC: "Cozy", "Movie", "Night", or your own.
+- **Charts.** Every numeric sensor of your Home Assistant (temperature, humidity, power, energy…) over the last
+  day, three days or week, from its own history. See [Charts](#charts).
 - **A visual editor.** Draw the rooms, drop in furniture, place lamps and ACs, and link each one to a Home Assistant entity.
 - **An island around the notch.** Rest the pointer on the MacBook's notch and a small live model of the home drops
   out of it, with scenes and every device one click away. See [The island](#the-island).
@@ -68,7 +70,7 @@ menu bar.
 | Do this | To get this |
 | --- | --- |
 | Click the menu bar icon | Open or close the panel |
-| Right-click the menu bar icon | Edit Home, Load Floor Plan, Reveal Plan File, Reveal Device Log, Show Island, Reload, Quit |
+| Right-click the menu bar icon | Edit Home, Charts, Load Floor Plan, Reveal Plan File, Reveal Device Log, Show Island, Reload, Quit |
 | Click a lamp in the 3D view, or its tile | Toggle it |
 | Drag sideways across a light tile | Dim it |
 | Click the sliders icon on a light tile | Brightness, white temperature, colour |
@@ -129,6 +131,14 @@ Lights and switches become lamps, `climate` entities become air conditioners, an
 AC's room temperature. Changes made elsewhere show up within a second. Details: [docs/connections.md](docs/connections.md).
 No server at hand? [`tools/lab`](tools/lab/README.md) runs a pretend Home Assistant on your Mac.
 
+## Charts
+
+Right-click the menu bar icon → **Charts…** (or the gear in the panel → **Charts…**). Tick sensors on the left;
+each gets a card with its current value, the minimum, time-weighted average and maximum, and a line over the
+chosen range. Hover the line (or focus it and use the arrow keys) to read any moment; **Show values** lists them
+as a table. The values come from Home Assistant's history API, so they reach as far back as its recorder keeps
+them (ten days by default). Your selection and range are remembered.
+
 ## Privacy
 
 House Control talks to your Home Assistant and to nothing else. There is no telemetry and no backend.
@@ -145,7 +155,7 @@ House Control talks to your Home Assistant and to nothing else. There is no tele
 ## Development
 
 ```
-web/      the UI: Three.js scene, panel, island and editor (Vite, plain ES modules)
+web/      the UI: Three.js scene, panel, island, editor and charts (Vite, plain ES modules)
 core/     the Home Assistant client, the device hub and the plan store (SwiftPM, with tests)
 macos/    the Mac shell: menu bar item, panel, island and editor windows (SwiftPM)
 scripts/  build-app.sh builds the app, release-mac.sh makes the .dmg,
@@ -167,7 +177,7 @@ npm run dev
 ```
 
 Then open `http://localhost:5199/`. Add `?plan=studio` for the second demo plan, `?mode=editor` for the editor,
-`?mode=island` for the island, or `?device=living.ac` to start on a device's sheet. Set `PORT` to use another port.
+`?mode=island` for the island, `?mode=charts` for the charts (with made-up sensors), or `?device=living.ac` to start on a device's sheet. Set `PORT` to use another port.
 
 Environment variables understood by the app:
 
@@ -178,6 +188,7 @@ Environment variables understood by the app:
 | `HOUSE_DATA_DIR=/some/folder` | Keep plan, token and log there instead of Application Support and the Keychain, and do not persist panel state. Handy for a clean test run |
 | `HOUSE_OPEN_ON_LAUNCH=1` | Open the panel at launch |
 | `HOUSE_OPEN_EDITOR=1` | Open the editor at launch (`connections` or `homeassistant` opens it on that screen) |
+| `HOUSE_OPEN_CHARTS=1` | Open the charts window at launch |
 | `HOUSE_OPEN_DEVICE=<id>` | Start the panel on that light's or AC's sheet |
 | `HOUSE_PIN=1` | Keep the panel open when it loses focus |
 | `HOUSE_DOCK=1` | Show a Dock icon, so UI automation tools can see the app |

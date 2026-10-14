@@ -140,6 +140,7 @@ async function boot() {
     if (isNative) {
       items.push('-',
         { label: 'Edit home…', action: () => post('openEditor') },
+        { label: 'Charts…', action: () => post('openCharts') },
         { label: 'Load floor plan…', action: () => post('loadPlan') },
         { label: 'Reveal plan file', action: () => post('revealPlan') },
         '-',
@@ -161,6 +162,9 @@ const mode = window.__HOUSE_BOOT__?.mode || new URLSearchParams(location.search)
 if (mode === 'editor') {
   document.documentElement.classList.add('mode-editor');
   import('./editor/editor.js').then((m) => m.bootEditor(app)).catch((e) => fatal('Editor failed to start', e));
+} else if (mode === 'charts') {
+  document.documentElement.classList.add('mode-charts');
+  import('./charts/charts.js').then((m) => m.bootCharts(app)).catch((e) => fatal('Charts failed to start', e));
 } else if (mode === 'island') {
   document.documentElement.classList.add('mode-island');
   import('./island/island.js').then((m) => m.bootIsland(app)).catch((e) => console.error(e));
