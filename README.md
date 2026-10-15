@@ -236,3 +236,17 @@ affiliated with or endorsed by Home Assistant.
 ## License
 
 [MIT](LICENSE)
+
+## Home Assistant add-on
+
+The same web UI also runs inside Home Assistant as an add-on, in the sidebar and on a dashboard, without the
+Mac. `homeassistant/house_control` is the add-on: a small Node server that serves the UI behind Ingress and
+answers what the Swift shell answers, using the Supervisor's token instead of a long-lived one.
+
+```bash
+./scripts/build-addon.sh   # builds web/ into homeassistant/house_control/www
+```
+
+Copy `homeassistant/house_control` into the `addons` folder of Home Assistant (the Samba share or the SSH
+add-on), then Settings → Add-ons → Add-on Store → ⋮ → Check for updates; it appears under *Local add-ons*.
+See [its documentation](homeassistant/house_control/DOCS.md) for the dashboard card.

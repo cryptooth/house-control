@@ -3,7 +3,7 @@
 // to one of its entities.
 import { h } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
-import { isNative, call } from '../bridge.js';
+import { isNative, isAddon, call } from '../bridge.js';
 import { SERVICES, linkOf } from '../config.js';
 
 const ORDER = ['homeassistant'];
@@ -109,7 +109,8 @@ export function createConnections({ rerender, toast, usedBy, onOpen }) {
       h('div.device', h('span.dot.on'), h('div', h('b', name), h('span', line))),
       h('div.fields',
         h('button.btn', { onclick: () => load() }, 'Refresh devices'),
-        h('button.btn', { onclick: () => disconnect(id) }, 'Disconnect')));
+        // The add-on is always connected to the Home Assistant it runs in.
+        isAddon ? null : h('button.btn', { onclick: () => disconnect(id) }, 'Disconnect')));
   }
 
   async function disconnect(id) {

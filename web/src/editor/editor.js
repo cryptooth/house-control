@@ -6,7 +6,7 @@ import { createWorld } from '../three/world.js';
 import { FURNITURE_TYPES, footprint } from '../three/furniture.js';
 import { h, clamp } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
-import { isNative, call } from '../bridge.js';
+import { isNative, isAddon, call, openMode } from '../bridge.js';
 import { createConnections } from './connections.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -72,6 +72,7 @@ export async function bootEditor(root) {
     h('header.bar',
       h('div.bar-title', icon('home', 17), nameInput),
       h('div.bar-actions',
+        isAddon ? h('button.btn', { title: 'Back to the 3D view', onclick: () => openMode('panel') }, icon('home', 14), 'Home') : null,
         h('button.btn', { title: 'Undo (⌘Z)', onclick: () => stepHistory(undo, redo) }, 'Undo'),
         h('button.btn', { title: 'Redo (⇧⌘Z)', onclick: () => stepHistory(redo, undo) }, 'Redo'),
         h('button.btn', { onclick: importPlan }, 'Import…'),
@@ -644,7 +645,7 @@ export async function bootEditor(root) {
       await call('savePlan', { config: doc });
       dirty = false;
       validate();
-      toast('Saved — the menu bar panel now shows this home');
+      toast(isAddon ? 'Saved — the 3D view now shows this home' : 'Saved — the menu bar panel now shows this home');
     } catch (e) {
       toast(e.message, true);
     }

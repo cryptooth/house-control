@@ -4,7 +4,7 @@ import { createWorld } from './three/world.js';
 import { createPanel } from './ui/panel.js';
 import { h, openMenu } from './ui/dom.js';
 import { icon } from './ui/icons.js';
-import { isNative, isPhone, post, incoming, haptic } from './bridge.js';
+import { isNative, isAddon, isPhone, post, incoming, haptic } from './bridge.js';
 
 const DEMO_PLANS = [
   { id: 'home', name: 'Demo · Apartment' },
@@ -13,7 +13,8 @@ const DEMO_PLANS = [
 const STAGE_INSETS = [62, 50]; // header above, panel overlap below
 
 const app = document.getElementById('app');
-if (isNative) document.documentElement.classList.add('native');
+if (isAddon) document.documentElement.classList.add('addon');
+else if (isNative) document.documentElement.classList.add('native');
 if (isPhone) document.documentElement.classList.add('ios');
 
 // ?safeTop=62&safeBottom=34 stands in for a phone's safe areas when its layout is looked at in a browser.
@@ -137,7 +138,12 @@ async function boot() {
         action: () => post('selectPlan', { plan: 'custom' }),
       });
     }
-    if (isNative) {
+    if (isAddon) {
+      // Inside Home Assistant: the editor and the charts open in this same page.
+      items.push('-',
+        { label: 'Edit home…', action: () => post('openEditor') },
+        { label: 'Charts…', action: () => post('openCharts') });
+    } else if (isNative) {
       items.push('-',
         { label: 'Edit home…', action: () => post('openEditor') },
         { label: 'Charts…', action: () => post('openCharts') },
@@ -153,7 +159,7 @@ async function boot() {
   if (store.acCfg.has(opened)) panel.openSheet({ kind: 'ac', id: opened });
   else if (store.lightCfg.has(opened)) panel.openSheet({ kind: 'light', id: opened });
 
-  if (!isNative) show();
+  if (!isNative || isAddon) show(); // a browser tab has no menu bar icon to open it
   post('ready', { summary: store.summary() });
   window.__house = { store, world, panel, config }; // handy in the dev console
 }

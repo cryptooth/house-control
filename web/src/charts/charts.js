@@ -3,7 +3,7 @@
 // plain browser it shows made-up sensors, so the page can be worked on with `vite dev`.
 import { h } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
-import { isNative, call, post } from '../bridge.js';
+import { isNative, isAddon, call, post, openMode } from '../bridge.js';
 import './charts.css';
 
 const RANGES = [
@@ -49,7 +49,8 @@ export async function bootCharts(root) {
   root.replaceChildren(h('div.charts',
     h('header.ch-bar',
       h('div.ch-title', icon('activity', 18), h('b', 'Charts'), h('span', isNative ? 'from Home Assistant' : 'demo data')),
-      ranges, refresh),
+      ranges, refresh,
+      isAddon ? h('button.btn', { onclick: () => openMode('panel'), title: 'Back to the 3D view' }, icon('home', 14), 'Home') : null),
     h('aside.ch-side', search, list),
     h('main.ch-main', grid)));
 

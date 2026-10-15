@@ -672,6 +672,15 @@ html.native .card { width: auto; height: auto; box-shadow:
 
 .sheet-note { margin-top: auto; padding: 12px 14px; border-radius: 16px; background: var(--glass); border: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--muted); display: flex; gap: 10px; align-items: center; }
 
+/* ---------- Home Assistant add-on ---------- */
+/* In Home Assistant's sidebar or a dashboard card the panel fills its frame, like on a phone. */
+
+html.addon, html.addon body { background: var(--bg); }
+html.addon #app { padding: 0; place-items: stretch; }
+html.addon .card { width: auto; height: auto; border-radius: 0; box-shadow: none; }
+html.addon .card-clip { border-radius: 0; box-shadow: none; }
+html.addon .notch { display: none; }
+
 /* ---------- iPhone ---------- */
 /* The same panel fills the whole screen: no card, no notch, safe areas respected,
    and controls sized for a thumb instead of a pointer. */
